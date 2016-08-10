@@ -1,11 +1,11 @@
 # arff-to-csv
-A simple ARFF to CSV conversion tool. There are many rich datasets that are publicly available, but are in Weka's ARFF format. Some applications may require CSV, so this tool makes it easy to convert between ARFF to CSV. 
+A simple ARFF to CSV conversion tool. There are many rich datasets that are publicly available, but they are in Weka's ARFF format. Some applications may require CSV, so this tool makes it easy to convert between ARFF to CSV. 
 
 # Requirements
 Java 1.8
 
 # Usage
-Using the executable jar, run the following: 
+Using the executable arfftocsv.jar, run the following: 
   
   ```java -jar arfftocsv.jar -i [PATH_TO_ARFF] -o [PATH_TO_OUTPUT_CSV] [OPTIONS]```
 
