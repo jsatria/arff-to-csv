@@ -26,6 +26,9 @@ public class ArffToCSV {
 		ArgumentParser parser = ArgumentParsers.newArgumentParser("ArffToCSV", true).defaultHelp(true).description("Convert ARFF to CSV");
 		parser.addArgument("-i").help("input arff filepath").required(true);
 		parser.addArgument("-o").help("output csv filepath").setDefault("." + File.separator + "convert.csv");
+
+		/** WIP: Collapsing columns into PSV **/
+		parser.addArgument("-c").help("collapse columns into pipe delimited column entered as comma separated tuples of column_name:[start_index]:[end_index]").setDefault("");
 		parser.addArgument("-header").help("schema file").setDefault(false);
 
 		try {
@@ -50,6 +53,8 @@ public class ArffToCSV {
 
 			Boolean header = Boolean.valueOf((String) params.get("header"));
 
+			List<String> collapsers = Arrays.asList(((String) params.get("c")).split(" "));
+
 			//collect header info
 			if (header) {
 				headerItems = bis.lines()
@@ -57,6 +62,14 @@ public class ArffToCSV {
 						.map(s -> (String) Array.get(s.split(" "), 1))
 						.collect(Collectors.toList());
 
+				collapsers.stream().forEach(c -> {
+					String[] collapseParams = c.split(":");
+					int start = Integer.valueOf(collapseParams[1]);
+					int end = Integer.valueOf(collapseParams[2]) +1 ;
+
+					headerItems.subList(start, end).clear();
+					headerItems.add(start, collapseParams[0]);
+				});
 				bos.write(StringUtils.join(headerItems, ","));
 				bos.flush();
 				bis = new BufferedReader(new FileReader(inputFile));//reset
@@ -69,6 +82,15 @@ public class ArffToCSV {
 					.forEach(s ->
 					{
 						List<String> values = Arrays.stream(s.split(",")).collect(Collectors.toList());
+						collapsers.stream().forEach(c -> {
+							String[] collapseParams = c.split(":");
+							int start = Integer.valueOf(collapseParams[1]);
+							int end = Integer.valueOf(collapseParams[2]) + 1;
+
+							String newString = StringUtils.join(values.subList(start, end), "|");
+							values.subList(start, end).clear();
+							values.add(start, newString);
+						});
 						s = StringUtils.join(values, ",");
 
 						try {
