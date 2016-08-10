@@ -19,6 +19,7 @@ import static com.satria.arfftocsv.util.ArffToCSVUtil.*;
 public class ArffToCSV {
 	static List<String> headerItems = null;
 	static List<String> lines = null;
+	static Map<String, Collapser> collapsers = null;
 
 	public static void main(String[] args){
 		Map<String, Object> params = new HashMap();
@@ -27,7 +28,8 @@ public class ArffToCSV {
 		parser.addArgument("-o").help("output csv filepath").setDefault("." + File.separator + "convert.csv");
 
 		/** WIP: Collapsing columns into PSV **/
-		parser.addArgument("-c").help("collapse columns into pipe delimited column entered as comma separated tuples of [column_name]:[start_index]:[end_index]:[invertTransform]").setDefault("");
+		parser.addArgument("-c")
+				.help("collapse columns into pipe delimited column entered as comma separated tuples of [column_name]:[start_index]:[end_index]:[invertTransform]");
 		parser.addArgument("-header").help("schema file").setDefault(false);
 
 		try {
@@ -50,7 +52,9 @@ public class ArffToCSV {
 			BufferedReader bis = new BufferedReader(new FileReader(inputFile));
 			BufferedWriter bos = new BufferedWriter(new FileWriter(outputFile));
 
-			Map<String, Collapser> collapsers = parseCollapserArg(Arrays.asList(((String) params.get("c")).split(" ")));
+			if (params.get("c") != null) {
+				collapsers = parseCollapserArg(Arrays.asList(((String) params.get("c")).split(" ")));
+			}
 
 			Boolean header = Boolean.valueOf((String) params.get("header"));
 
@@ -61,13 +65,16 @@ public class ArffToCSV {
 						.map(s -> (String) Array.get(s.split(" "), 1))
 						.collect(Collectors.toList());
 
-				collapsers.entrySet().stream().forEach(x -> {
-					Collapser c =  x.getValue();
-					List<String> items = headerItems.subList(c.start, c.end);
-					c.setHeaders(new ArrayList<>(headerItems.subList(c.start, c.end)));
-					items.clear();
-					headerItems.add(c.start, c.name);
-				});
+				//store collapsed headers
+				if (collapsers != null) {
+					collapsers.entrySet().stream().forEach(x -> {
+						Collapser c = x.getValue();
+						List<String> items = headerItems.subList(c.start, c.end);
+						c.setHeaders(new ArrayList<>(headerItems.subList(c.start, c.end)));
+						items.clear();
+						headerItems.add(c.start, c.name);
+					});
+				}
 
 				bos.write(StringUtils.join(headerItems, ","));
 				bos.flush();
@@ -82,23 +89,24 @@ public class ArffToCSV {
 					.forEach(s ->
 					{
 						List<String> values = Arrays.stream(s.split(",")).collect(Collectors.toList());
-						collapsers.entrySet().stream().forEach(x -> {
-							Collapser c = x.getValue();
-							List<String> subValues = values.subList(c.start, c.end);
-							String newValueString = "";
 
-							if (c.invertTransform){
-								List<String> invertedValuesString = invertTransform(c, subValues);
-								newValueString = StringUtils.join(invertedValuesString, "|");
-							}
+						if (collapsers != null) {
+							collapsers.entrySet().stream().forEach(x -> {
+								Collapser c = x.getValue();
+								List<String> subValues = values.subList(c.start, c.end);
+								String newValueString = "";
 
-							else {
-								newValueString = StringUtils.join(values.subList(c.start, c.end), "|");
-							}
+								if (c.invertTransform) {
+									List<String> invertedValuesString = invertTransform(c, subValues);
+									newValueString = StringUtils.join(invertedValuesString, "|");
+								} else {
+									newValueString = StringUtils.join(values.subList(c.start, c.end), "|");
+								}
 
-							values.subList(c.start, c.end).clear();
-							values.add(c.start, newValueString);
-						});
+								values.subList(c.start, c.end).clear();
+								values.add(c.start, newValueString);
+							});
+						}
 						s = StringUtils.join(values, ",");
 
 						try {
