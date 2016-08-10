@@ -1,4 +1,4 @@
-package com.satria;
+package com.satria.arfftocsv;
 
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
@@ -8,11 +8,10 @@ import org.jooq.lambda.Seq;
 
 import java.io.*;
 import java.lang.reflect.Array;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
+
+import static com.satria.arfftocsv.util.ArffToCSVUtil.*;
 
 /**
  * Created by jonathan on 27/07/16.
@@ -28,7 +27,7 @@ public class ArffToCSV {
 		parser.addArgument("-o").help("output csv filepath").setDefault("." + File.separator + "convert.csv");
 
 		/** WIP: Collapsing columns into PSV **/
-		parser.addArgument("-c").help("collapse columns into pipe delimited column entered as comma separated tuples of column_name:[start_index]:[end_index]").setDefault("");
+		parser.addArgument("-c").help("collapse columns into pipe delimited column entered as comma separated tuples of [column_name]:[start_index]:[end_index]:[invertTransform]").setDefault("");
 		parser.addArgument("-header").help("schema file").setDefault(false);
 
 		try {
@@ -51,9 +50,9 @@ public class ArffToCSV {
 			BufferedReader bis = new BufferedReader(new FileReader(inputFile));
 			BufferedWriter bos = new BufferedWriter(new FileWriter(outputFile));
 
-			Boolean header = Boolean.valueOf((String) params.get("header"));
+			Map<String, Collapser> collapsers = parseCollapserArg(Arrays.asList(((String) params.get("c")).split(" ")));
 
-			List<String> collapsers = Arrays.asList(((String) params.get("c")).split(" "));
+			Boolean header = Boolean.valueOf((String) params.get("header"));
 
 			//collect header info
 			if (header) {
@@ -62,16 +61,17 @@ public class ArffToCSV {
 						.map(s -> (String) Array.get(s.split(" "), 1))
 						.collect(Collectors.toList());
 
-				collapsers.stream().forEach(c -> {
-					String[] collapseParams = c.split(":");
-					int start = Integer.valueOf(collapseParams[1]);
-					int end = Integer.valueOf(collapseParams[2]) +1 ;
-
-					headerItems.subList(start, end).clear();
-					headerItems.add(start, collapseParams[0]);
+				collapsers.entrySet().stream().forEach(x -> {
+					Collapser c =  x.getValue();
+					List<String> items = headerItems.subList(c.start, c.end);
+					c.setHeaders(new ArrayList<>(headerItems.subList(c.start, c.end)));
+					items.clear();
+					headerItems.add(c.start, c.name);
 				});
+
 				bos.write(StringUtils.join(headerItems, ","));
 				bos.flush();
+				bis.close();
 				bis = new BufferedReader(new FileReader(inputFile));//reset
 			}
 
@@ -82,14 +82,22 @@ public class ArffToCSV {
 					.forEach(s ->
 					{
 						List<String> values = Arrays.stream(s.split(",")).collect(Collectors.toList());
-						collapsers.stream().forEach(c -> {
-							String[] collapseParams = c.split(":");
-							int start = Integer.valueOf(collapseParams[1]);
-							int end = Integer.valueOf(collapseParams[2]) + 1;
+						collapsers.entrySet().stream().forEach(x -> {
+							Collapser c = x.getValue();
+							List<String> subValues = values.subList(c.start, c.end);
+							String newValueString = "";
 
-							String newString = StringUtils.join(values.subList(start, end), "|");
-							values.subList(start, end).clear();
-							values.add(start, newString);
+							if (c.invertTransform){
+								List<String> invertedValuesString = invertTransform(c, subValues);
+								newValueString = StringUtils.join(invertedValuesString, "|");
+							}
+
+							else {
+								newValueString = StringUtils.join(values.subList(c.start, c.end), "|");
+							}
+
+							values.subList(c.start, c.end).clear();
+							values.add(c.start, newValueString);
 						});
 						s = StringUtils.join(values, ",");
 
@@ -103,6 +111,9 @@ public class ArffToCSV {
 
 			bos.flush();
 
+			bos.close();
+			bis.close();
+
 		} catch (FileNotFoundException e){
 			e.printStackTrace();
 			System.exit(1);
@@ -110,7 +121,6 @@ public class ArffToCSV {
 			e.printStackTrace();
 			System.exit(1);
 		}
-
-
 	}
+
 }
