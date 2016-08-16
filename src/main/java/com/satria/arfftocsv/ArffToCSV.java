@@ -1,4 +1,4 @@
-package com.satria;
+package com.satria.arfftocsv;
 
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
@@ -8,11 +8,10 @@ import org.jooq.lambda.Seq;
 
 import java.io.*;
 import java.lang.reflect.Array;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
+
+import static com.satria.arfftocsv.util.ArffToCSVUtil.*;
 
 /**
  * Created by jonathan on 27/07/16.
@@ -20,12 +19,17 @@ import java.util.stream.Collectors;
 public class ArffToCSV {
 	static List<String> headerItems = null;
 	static List<String> lines = null;
+	static Map<String, Collapser> collapsers = null;
 
 	public static void main(String[] args){
 		Map<String, Object> params = new HashMap();
 		ArgumentParser parser = ArgumentParsers.newArgumentParser("ArffToCSV", true).defaultHelp(true).description("Convert ARFF to CSV");
 		parser.addArgument("-i").help("input arff filepath").required(true);
 		parser.addArgument("-o").help("output csv filepath").setDefault("." + File.separator + "convert.csv");
+
+		/** WIP: Collapsing columns into PSV **/
+		parser.addArgument("-c")
+				.help("collapse columns into pipe delimited column entered as comma separated tuples of [column_name]:[start_index]:[end_index]:[invertTransform]");
 		parser.addArgument("-header").help("schema file").setDefault(false);
 
 		try {
@@ -48,6 +52,10 @@ public class ArffToCSV {
 			BufferedReader bis = new BufferedReader(new FileReader(inputFile));
 			BufferedWriter bos = new BufferedWriter(new FileWriter(outputFile));
 
+			if (params.get("c") != null) {
+				collapsers = parseCollapserArg(Arrays.asList(((String) params.get("c")).split(" ")));
+			}
+
 			Boolean header = Boolean.valueOf((String) params.get("header"));
 
 			//collect header info
@@ -57,8 +65,20 @@ public class ArffToCSV {
 						.map(s -> (String) Array.get(s.split(" "), 1))
 						.collect(Collectors.toList());
 
+				//store collapsed headers
+				if (collapsers != null) {
+					collapsers.entrySet().stream().forEach(x -> {
+						Collapser c = x.getValue();
+						List<String> items = headerItems.subList(c.start, c.end);
+						c.setHeaders(new ArrayList<>(headerItems.subList(c.start, c.end)));
+						items.clear();
+						headerItems.add(c.start, c.name);
+					});
+				}
+
 				bos.write(StringUtils.join(headerItems, ","));
 				bos.flush();
+				bis.close();
 				bis = new BufferedReader(new FileReader(inputFile));//reset
 			}
 
@@ -69,6 +89,24 @@ public class ArffToCSV {
 					.forEach(s ->
 					{
 						List<String> values = Arrays.stream(s.split(",")).collect(Collectors.toList());
+
+						if (collapsers != null) {
+							collapsers.entrySet().stream().forEach(x -> {
+								Collapser c = x.getValue();
+								List<String> subValues = values.subList(c.start, c.end);
+								String newValueString = "";
+
+								if (c.invertTransform) {
+									List<String> invertedValuesString = invertTransform(c, subValues);
+									newValueString = StringUtils.join(invertedValuesString, "|");
+								} else {
+									newValueString = StringUtils.join(values.subList(c.start, c.end), "|");
+								}
+
+								values.subList(c.start, c.end).clear();
+								values.add(c.start, newValueString);
+							});
+						}
 						s = StringUtils.join(values, ",");
 
 						try {
@@ -81,6 +119,9 @@ public class ArffToCSV {
 
 			bos.flush();
 
+			bos.close();
+			bis.close();
+
 		} catch (FileNotFoundException e){
 			e.printStackTrace();
 			System.exit(1);
@@ -88,7 +129,6 @@ public class ArffToCSV {
 			e.printStackTrace();
 			System.exit(1);
 		}
-
-
 	}
+
 }
